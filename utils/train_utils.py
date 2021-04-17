@@ -17,7 +17,7 @@ def train_conv_nets(
     convnet_depth,
     convnet_widths,
     label_noise_as_int=10,
-    n_batch_steps=500_000,
+    n_batch_steps=250_000,
     optimizer=None,
     save=True,
     data_save_path_prefix="",
@@ -57,7 +57,7 @@ def train_conv_nets(
 
     batch_size = 128
     # total number desirec SGD steps / number batches per epoch = n_epochs
-    n_epochs = (n_batch_steps // (x_train.shape[0] // (batch_size*2)))
+    n_epochs = n_batch_steps // (x_train.shape[0] // batch_size)
     n_classes = tf.math.reduce_max(y_train).numpy() + 1
 
     # store results for later graphing and analysis.
