@@ -101,7 +101,7 @@ def train_conv_nets(
             x=x_train,
             y=y_train,
             validation_data=(x_test, y_test),
-            epochs=n_epochs,
+            epochs=n_epochs/2,
             batch_size=batch_size,
             verbose=0,
             callbacks=[model_timer],
