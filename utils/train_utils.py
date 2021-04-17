@@ -17,7 +17,7 @@ def train_conv_nets(
     convnet_depth,
     convnet_widths,
     label_noise_as_int=10,
-    n_batch_steps=250_000,
+    n_batch_steps=500_000,
     optimizer=None,
     save=True,
     data_save_path_prefix="",
