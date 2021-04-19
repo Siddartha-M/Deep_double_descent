@@ -95,11 +95,11 @@ def train_conv_nets(
         )
 
         model_timer = timer()
-
+        print(type(x_train))
         print(f"STARTING TRAINING: {model_id}")
         history = conv_net.fit(
-            x=x_train,
-            y=y_train,
+            x_train,
+            y_train,
             validation_data=(x_test, y_test),
             epochs=n_epochs,
             batch_size=batch_size,
@@ -263,6 +263,7 @@ def load_data(data_set, label_noise, augment_data=False):
     (x_train, y_train), (x_test, y_test) = get_data.load_data()
     image_shape = x_train[0].shape
 
+    
     # apply label noise to the data set
     if 0 < label_noise:
         random_idx = np.random.choice(
@@ -272,14 +273,50 @@ def load_data(data_set, label_noise, augment_data=False):
             low=y_train.min(), high=y_train.max(), size=len(random_idx)
         )
         y_train[random_idx] = np.expand_dims(rand_labels, axis=1)
-
+    
+    temp = np.zeros((50000,32,32,3))
+    for i in range(50000):
+        for j in range(32):
+            for k in range(32):
+                for l in range(3):
+                    temp[i][j][k][l] = x_train[i][j][k][l]/255
+    
+    temp1 = np.zeros((50000,32,32,3))
+    for i in range(50000):
+        if np.random.randint(0,2) > 0.5:
+            for j in range(32):
+                for k in range(32):
+                    for l in range(3):
+                        temp1[i][j][31-k][l] = temp[i][j][k][l]
+        else:
+            for j in range(32):
+                for k in range(32):
+                    for l in range(3):
+                        temp1[i][j][k][l] = temp[i][j][k][l]
+                        
+    temp2 = np.zeros((50000,40,40,3))+0.5
+    for i in range(50000):
+        for j in range(32):
+            for k in range(32):
+                for l in range(3):
+                    temp2[i][4+j][4+k][l] = temp1[i][j][k][l]
+                    
+    temp3 = np.zeros((50000,32,32,3))                
+    for i in range(50000):
+        if np.random.randint(0,2) > 0.5:
+            len_cut = np.random.randint(0,9)
+            wid_cut = np.random.randint(0,9)
+            temp3[i] = temp2[i,len_cut:len_cut+32,wid_cut:wid_cut+32]
+        else:
+            temp3[i] = temp2[i,4:36,4:36]
+    
     # cast values to tf.float32 and normalize images to range [0-1]
     x_train, x_test = (
-        tf.cast(x_train, tf.float32) / 255,
+        tf.cast(temp3, tf.float32) / 1,
         tf.cast(x_test, tf.float32) / 255,
     )
     y_train, y_test = tf.cast(y_train, tf.float32), tf.cast(y_test, tf.float32)
-
+    
     return (x_train, y_train), (x_test, y_test), list(image_shape)
 
 class inverse_squareroot_lr:
