@@ -313,11 +313,11 @@ def load_data(data_set, label_noise, augment_data=False):
         else:
             temp1[i] = temp[i,4:36,4:36]
     
-    temp = np.zeros((20000,1))
-    for i in range(10000):
+    temp = np.zeros((100000,1))
+    for i in range(50000):
         temp[i] = y_train[i]
-    for i in range(10000):
-        temp[10000+i] = y_train[i]
+    for i in range(50000):
+        temp[50000+i] = y_train[i]
 
     # cast values to tf.float32 and normalize images to range [0-1]
     x_train, x_test = (
