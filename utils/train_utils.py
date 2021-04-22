@@ -261,7 +261,7 @@ def load_data(data_set, label_noise, augment_data=False):
 
     # load the data.
     (x_train, y_train), (x_test, y_test) = get_data.load_data()
-    image_shape = 2*x_train[0].shape
+    image_shape = x_train[0].shape
 
     # apply label noise to the data set
     if 0 < label_noise:
