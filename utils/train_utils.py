@@ -287,45 +287,44 @@ def load_data(data_set, label_noise, augment_data=False):
     
     temp1 = np.zeros((100000,32,32,3))
     for i in range(100000):
-        if np.random.randint(0,2) > 0.5:
-            for j in range(32):
-                for k in range(32):
-                    for l in range(3):
-                        temp1[i][j][31-k][l] = temp[i][j][k][l]
-        else:
-            for j in range(32):
-                for k in range(32):
-                    for l in range(3):
-                        temp1[i][j][k][l] = temp[i][j][k][l]
+    	if np.random.randint(0,2) > 0.5:
+        	for j in range(32):
+            		for k in range(32):
+                		for l in range(3):
+                    			temp1[i][j][31-k][l] = temp[i][j][k][l]
+    	else:
+        	for j in range(32):
+            		for k in range(32):
+                		for l in range(3):
+                    			temp1[i][j][k][l] = temp[i][j][k][l]
                         
-    temp2 = np.zeros((100000,40,40,3))+0.5
+    temp = np.zeros((100000,40,40,3))+0.5
     for i in range(100000):
         for j in range(32):
             for k in range(32):
                 for l in range(3):
-                    temp2[i][4+j][4+k][l] = temp1[i][j][k][l]
-                    
-    temp3 = np.zeros((100000,32,32,3))                
+                    temp[i][4+j][4+k][l] = temp1[i][j][k][l]
+                                   
     for i in range(100000):
         if np.random.randint(0,2) > 0.5:
             len_cut = np.random.randint(0,9)
             wid_cut = np.random.randint(0,9)
-            temp3[i] = temp2[i,len_cut:len_cut+32,wid_cut:wid_cut+32]
+            temp1[i] = temp[i,len_cut:len_cut+32,wid_cut:wid_cut+32]
         else:
-            temp3[i] = temp2[i,4:36,4:36]
+            temp1[i] = temp[i,4:36,4:36]
     
-    temp4 = np.zeros((20000,1))
+    temp = np.zeros((20000,1))
     for i in range(10000):
-        temp4[i] = y_train[i]
+        temp[i] = y_train[i]
     for i in range(10000):
-        temp4[10000+i] = y_train[i]
+        temp[10000+i] = y_train[i]
 
     # cast values to tf.float32 and normalize images to range [0-1]
     x_train, x_test = (
-        tf.cast(temp3, tf.float32) / 1,
+        tf.cast(temp1, tf.float32) / 1,
         tf.cast(x_test, tf.float32) / 255,
     )
-    y_train, y_test = tf.cast(temp4, tf.float32), tf.cast(y_test, tf.float32)
+    y_train, y_test = tf.cast(temp, tf.float32), tf.cast(y_test, tf.float32)
 
     return (x_train, y_train), (x_test, y_test), list(image_shape)
 
