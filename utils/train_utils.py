@@ -18,10 +18,14 @@ def train_conv_nets(
     convnet_widths,
     label_noise_as_int=10,
     n_batch_steps=500_000,
+    batch_size=None,
+    sample_size=None,
     optimizer=None,
     save=True,
     data_save_path_prefix="",
-    data_save_path_suffix=""
+    data_save_path_suffix="",
+    load_saved_metrics=False,
+    data_augmentation=False
 ):
     """
     Train and save the results of Conv nets of a given range of model widths.
@@ -40,22 +44,32 @@ def train_conv_nets(
         Percentage of label noise to add to the training data.
     n_batch_steps: int
         number of gradient descent steps to take.
+    batch_size: int
+        Size of batchs to use during model training. Default to 128.
+    sample_size: int
+        Sample size to train the networks on. Used to replicate the sample-wise double descent results.
+        Default is to use the entire data set (specified in data_set arg.)
     save: bool
         whether to save the data and trained model weights.
     data_save_path_prefix: str
         prefix to add to the save pkl file path.
     data_save_path_suffix: str
         suffix to add to the save pkl file name.
+    load_saved_metrics: bool
+        if True, will attempt to load the metrics from a previous training session in the save_path,
+        to continue training from there. If True, will load the saved .pkl file instead of starting
+        over and overwriting it. 
     """
 
     label_noise = label_noise_as_int / 100
 
     # load the relevent dataset. Note that the training data is cast to tf.float32 and normalized by 255.
     (x_train, y_train), (x_test, y_test), image_shape = load_data(
-        data_set, label_noise, augment_data=False
+        data_set, label_noise, augment_data=data_augmentation, sample_size=sample_size
     )
 
-    batch_size = 128
+    batch_size = 128 if batch_size is None else batch_size
+    
     # total number desirec SGD steps / number batches per epoch = n_epochs
     n_epochs = n_batch_steps // (x_train.shape[0] // batch_size)
     n_classes = tf.math.reduce_max(y_train).numpy() + 1
@@ -81,6 +95,10 @@ def train_conv_nets(
         data_save_path = data_save_path[:-4] + data_save_path_suffix + ".pkl"
 
     for width in convnet_widths:
+        if load_saved_metrics and width in loaded_widths:
+            print('width %d results already loaded from .pkl file, training skipped' %width)
+            continue
+
         # Depth 5 Conv Net using default Kaiming Uniform Initialization.
         conv_net, model_id = make_convNet(
             image_shape, depth=convnet_depth, init_channels=width, n_classes=n_classes
@@ -128,10 +146,13 @@ def train_resnet18(
     label_noise_as_int=10,
     n_epochs=None,
     n_batch_steps=500_000,
+    batch_size=None,
+    sample_size=None,
     optimizer=None,
     save=True,
     data_save_path_prefix="",
-    data_save_path_suffix=""
+    data_save_path_suffix="",
+    load_saved_metrics=False
 ):
     """
     Train and save the results of ResNets nets of a given range of model widths.
@@ -148,6 +169,10 @@ def train_resnet18(
         number of epochs to train, if not specified, will calculate with n_batch_steps
     n_batch_steps: int
         number of gradient descent steps to take, over-ridden if n_epochs is specified
+    batch_size: int
+        Size of batchs to use during model training. Default to 128.
+    sample_size: int
+        Sample size to train the networks on. Used to replicate the sample-wise double descent results.
     optimizer: tf.keras.optimizer
         Optimizer to use while training resnets. Default is Adam with a learning rate of 1e-4.
     save: bool
@@ -156,16 +181,20 @@ def train_resnet18(
         prefix to add to the save pkl file path.
     data_save_path_suffix: str
         suffix to add to the save pkl file name.
+    load_saved_metrics: bool
+        if True, will attempt to load the metrics from a previous training session in the save_path,
+        to continue training from there. If True, will load the saved .pkl file instead of starting
+        over and overwriting it. 
     """
 
     label_noise = label_noise_as_int / 100
 
     # load the relevent dataset
     (x_train, y_train), (x_test, y_test), image_shape = load_data(
-        data_set, label_noise, augment_data=False
+        data_set, label_noise, augment_data=False, sample_size=sample_size
     )
 
-    batch_size = 128
+    batch_size = 128 if batch_size is None else batch_size
     n_classes = tf.math.reduce_max(y_train).numpy() + 1
 
     # total number desirec SGD steps / number batches per epoch = n_epochs
@@ -188,8 +217,31 @@ def train_resnet18(
     if data_save_path_suffix:
         assert data_save_path[-4:] == ".pkl"
         data_save_path = data_save_path[:-4] + data_save_path_suffix + ".pkl"
+    
+    # load data from prior runs of related experiment.
+    if load_saved_metrics:
+        try:
+            with open(data_save_path, 'rb') as f:
+                metrics = pkl.load(f)
+        except Exception as e:
+            print('Could not find saved metrics.pkl file, exiting')
+            raise e
+
+        loaded_widths = [int(i.split('_')[-1]) for i in metrics.keys()]
+        assert resnet_widths[:len(loaded_widths)] == loaded_widths
+        print('loaded results for width %s from existing file at %s' %(', '.join([str(i) for i in loaded_widths]), data_save_path))
+
+        assert data_save_path[-4:] == ".pkl"
+        data_backup_path = data_save_path[:-4] + 'backup_w%d_' %loaded_widths[-1] + time.strftime("%D_%H%M%S").replace('/', '') + ".pkl"
+        print('saving existing result.pkl to backup at %s' %data_backup_path)
+        pkl.dump(metrics, open(data_backup_path, "wb"))
+
 
     for width in resnet_widths:
+        if load_saved_metrics and width in loaded_widths:
+            print('width %d results already loaded from .pkl file, training skipped' %width)
+            continue
+
         # Resnet18 with Kaiming Uniform Initialization.
         resnet, model_id = make_resnet18_UniformHe(
             image_shape, k=width, num_classes=n_classes
@@ -203,8 +255,8 @@ def train_resnet18(
             loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
             metrics=["accuracy"],
         )
-        resnet(tf.keras.Input(shape=list(image_shape), batch_size=batch_size))
-
+        
+        # Custom Timer with cleaner output.
         model_timer = timer()
 
         print(f"STARTING TRAINING: {model_id}, Label Noise: {label_noise}")
@@ -222,7 +274,7 @@ def train_resnet18(
         # add results to dictionary and store the resulting model weights.
         metrics[model_id] = history.history
 
-        # clear GPU of prior model to decrease training times.
+        # clear GPU of prior model to decrease VRAM usage.
         tf.keras.backend.clear_session()
 
         # Save results to the data file
@@ -233,16 +285,21 @@ def train_resnet18(
     return metrics
 
 
-def load_data(data_set, label_noise, augment_data=False):
+def load_data(data_set, label_noise, augment_data=False, sample_size=None):
     """
     Helper Function to Load data in the form of a tensorflow data set, apply label noise, and return the
     train data and test data.
 
     Parameters
     ----------
-    data_set - str, name of data set to load from tf.keras.datasets
-    label_noise - float, percentage of training data to add noise to
-    augment_data - boolean, whether or not to use random cropping and horizontal flipping to augment training data
+    data_set: str 
+        name of data set to load from tf.keras.datasets
+    label_noise: float
+        percentage of training data to add noise to
+    augment_data: boolean
+        whether or not to use random cropping and horizontal flipping to augment training data
+    sample_size: int
+        The size of the data set to return.
     """
 
     datasets = ["cifar10", "cifar100", "mnist"]
@@ -261,70 +318,34 @@ def load_data(data_set, label_noise, augment_data=False):
 
     # load the data.
     (x_train, y_train), (x_test, y_test) = get_data.load_data()
-    image_shape = x_train[0].shape
+    
+    if sample_size is not None:
+        idx = np.random.choice(y_train.shape[0], sample_size, replace=False)
+        x_train, y_train = x_train[idx], y_train[idx]       
 
     # apply label noise to the data set
     if 0 < label_noise:
         random_idx = np.random.choice(
-            x_train.shape[0], int(label_noise * x_train.shape[0])
+            y_train.shape[0], int(label_noise * y_train.shape[0]), replace=False
         )
-        rand_labels = np.random.randint(
-            low=y_train.min(), high=y_train.max(), size=len(random_idx)
-        )
-        y_train[random_idx] = np.expand_dims(rand_labels, axis=1)
-
-    temp = np.zeros((100000,32,32,3))
-    for i in range(50000):
-        for j in range(32):
-            for k in range(32):
-                for l in range(3):
-                    temp[i][j][k][l] = x_train[i][j][k][l]/255
-    for i in range(50000):
-        for j in range(32):
-            for k in range(32):
-                for l in range(3):
-                    temp[50000+i][j][k][l] = x_train[i][j][k][l]/255
+        # To ensure that the random label is incorrct, we apply noise by first adding 
+        # a random value between 1 (inclusive) and 10 (exclusive), and then taking modulo
+        # 10. This guarantees the new value will be different from the original, while
+        # also in the correct range.
+        upper = y_train.max() + 1
+        N = random_idx.shape[0]
+        y_train[random_idx] = (y_train[random_idx] + np.random.randint(1, upper, (N, 1))) % upper
+        
+    if augment_data:
+        (x_train,y_train) = augment_data_set(data_set, x_train, y_train )
     
-    temp1 = np.zeros((100000,32,32,3))
-    for i in range(100000):
-    	if np.random.randint(0,2) > 0.5:
-        	for j in range(32):
-            		for k in range(32):
-                		for l in range(3):
-                    			temp1[i][j][31-k][l] = temp[i][j][k][l]
-    	else:
-        	for j in range(32):
-            		for k in range(32):
-                		for l in range(3):
-                    			temp1[i][j][k][l] = temp[i][j][k][l]
-                        
-    temp = np.zeros((100000,40,40,3))+0.5
-    for i in range(100000):
-        for j in range(32):
-            for k in range(32):
-                for l in range(3):
-                    temp[i][4+j][4+k][l] = temp1[i][j][k][l]
-                                   
-    for i in range(100000):
-        if np.random.randint(0,2) > 0.5:
-            len_cut = np.random.randint(0,9)
-            wid_cut = np.random.randint(0,9)
-            temp1[i] = temp[i,len_cut:len_cut+32,wid_cut:wid_cut+32]
-        else:
-            temp1[i] = temp[i,4:36,4:36]
-    
-    temp = np.zeros((100000,1))
-    for i in range(50000):
-        temp[i] = y_train[i]
-    for i in range(50000):
-        temp[50000+i] = y_train[i]
-
+    image_shape = x_train[0].shape
     # cast values to tf.float32 and normalize images to range [0-1]
     x_train, x_test = (
-        tf.cast(temp1, tf.float32) / 1,
+        tf.cast(x_train, tf.float32) / 255,
         tf.cast(x_test, tf.float32) / 255,
     )
-    y_train, y_test = tf.cast(temp, tf.float32), tf.cast(y_test, tf.float32)
+    y_train, y_test = tf.cast(y_train, tf.int16), tf.cast(y_test, tf.int16)
 
     return (x_train, y_train), (x_test, y_test), list(image_shape)
 
@@ -346,28 +367,30 @@ class inverse_squareroot_lr:
         self.gradient_steps += 1
         return lr
 
-def augment_data_set(data_set, crop_dim=32, target_height=36, target_width=36):
-    """ Apply random cropping and random horizontal flip data augmentation as done in Deep Double Descent """
+def augment_data_set(data_set, x_train, y_train, crop_height=40, crop_width=40):
+    """ 
+        data_set: tf.data.Dataset (https://www.tensorflow.org/api_docs/python/tf/data/Dataset)
+    Apply random cropping and random horizontal flip data augmentation as done in Deep Double Descent """
+    
+    # data augmentation is validated only for cifar10
+    
+    [height,width,channels] = x_train[0].shape
+    
+    if data_set == "cifar10":
+        # duplicate the data so you will more data to train after random flip and crop
+        data_x = np.concatenate((x_train, x_train), axis=0)
+        y_train = np.concatenate((y_train, y_train), axis=0)
 
-    # random flip. Preserve original label
-    rand_flip = lambda image, label: (tf.image.random_flip_left_right(image), label)
+        #flip the images randomly
+        data_x = tf.image.random_flip_left_right(data_x)
 
-    # Random Crop. Preserve original label
-    def rand_crop(image, label):
-        offset_height = tf.random.uniform([], 0, 3, dtype=tf.int32)
-        offset_width = tf.random.uniform([], 0, 3, dtype=tf.int32)
-        image = tf.image.resize_with_crop_or_pad(image, target_height, target_width)
-        return (
-            tf.image.crop_to_bounding_box(
-                image, offset_height, offset_width, crop_dim, crop_dim
-            ),
-            label,
-        )
+        #pad the data before croping
+        npad = ((0, 0),(crop_height-height, crop_width-width), (crop_height-height, crop_width-width), (0, 0))
+        data_x = np.pad(data_x, npad,'constant', constant_values = 125)
 
-    data_set_flip = data_set.map(rand_flip)
-    data_set_drop = data_set.map(rand_crop)
+        x_train = tf.image.random_crop(data_x,[100000,32,32,3])
 
-    return {"flip": data_set_flip, "crop": data_set_drop}
+    return (x_train, y_train)
 
 
 class timer(tf.keras.callbacks.Callback):
